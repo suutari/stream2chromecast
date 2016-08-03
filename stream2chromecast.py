@@ -26,6 +26,7 @@ import urlparse
 
 import select
 
+import tempfile
 
 script_name = (sys.argv[0].split(os.sep))[-1]
 
@@ -101,7 +102,7 @@ Additional option to supply custom parameters to the transcoder (ffmpeg or avcon
 
 
 
-PIDFILE = "/tmp/stream2chromecast_%s.pid"
+PIDFILE = os.path.join(tempfile.gettempdir(), "stream2chromecast_%s.pid")
 
 FFMPEG = 'ffmpeg -i "%s" -preset ultrafast -f mp4 -frag_duration 3000 -b:v 2000k -loglevel error %s -'
 AVCONV = 'avconv -i "%s" -preset ultrafast -f mp4 -frag_duration 3000 -b:v 2000k -loglevel error %s -'
@@ -114,7 +115,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """ Handle HTTP requests for files which do not need transcoding """
     
     def do_GET(self):
-        filepath = urllib.unquote_plus(self.path)
+        filepath = urllib.unquote_plus(self.path)[1:]
         
         self.send_headers(filepath)       
         
@@ -131,8 +132,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 
     def write_response(self, filepath):
-        with open(filepath, "r") as f: 
-            self.wfile.write(f.read())    
+        with open(filepath, "rb") as f: 
+            self.wfile.write(f.read())
 
 
 
@@ -362,8 +363,7 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
     thread = Thread(target=server.handle_request)
     thread.start()    
 
-    
-    url = "http://%s:%s%s" % (webserver_ip, str(server.server_port), urllib.quote_plus(filename, "/"))
+    url = "http://%s:%s/%s" % (webserver_ip, str(server.server_port), urllib.quote_plus(filename, "/"))
     print "URL & content-type: ", url, req_handler.content_type
 
     load(cast, url, req_handler.content_type)
