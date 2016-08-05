@@ -329,7 +329,7 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
     save_pid(cast.host)
         
     print "Playing:", filename
-    
+
     transcoder_cmd, probe_cmd = get_transcoder_cmds(preferred_transcoder=transcoder)
         
     mimetype = get_mimetype(filename, probe_cmd)
@@ -344,12 +344,14 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
 
     
     if transcode:
-        if transcoder_cmd == "ffmpeg":  
-            req_handler = TranscodingRequestHandler
+        req_handler = TranscodingRequestHandler
+        if transcoder_cmd == "ffmpeg":
             req_handler.transcoder_command = FFMPEG
-        elif transcoder_cmd == "avconv":   
-            req_handler = TranscodingRequestHandler
+        elif transcoder_cmd == "avconv":
             req_handler.transcoder_command = AVCONV
+        else:
+            sys.exit("Unable to find ffmpeg or avconv")
+
         
         if transcode_options is not None:    
             req_handler.transcode_options = transcode_options
