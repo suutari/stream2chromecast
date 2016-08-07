@@ -21,7 +21,7 @@ import urlparse
 from threading import Thread
 
 import cc_device_finder
-from stream2chromecast.cc_media_controller import CCMediaController
+from cc_media_controller import CCMediaController
 
 script_name = (sys.argv[0].split(os.sep))[-1]
 
@@ -108,7 +108,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         filepath = urllib.unquote_plus(self.path)[1:]
 
-        self.send_headers(filepath)
+        self.send_headers()
 
         print "sending file"
         self.write_response(filepath)
