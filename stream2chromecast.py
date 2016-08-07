@@ -28,7 +28,6 @@ import select
 
 import tempfile
 
-
 script_name = (sys.argv[0].split(os.sep))[-1]
 
 USAGETEXT = """
@@ -103,7 +102,7 @@ Additional option to supply custom parameters to the transcoder (ffmpeg or avcon
 
 
 
-PIDFILE = os.path.join(tempfile.gettempdir(), "stream2chromecast_%s.pid") 
+PIDFILE = os.path.join(tempfile.gettempdir(), "stream2chromecast_%s.pid")
 
 FFMPEG = 'ffmpeg -i "%s" -preset ultrafast -f mp4 -frag_duration 3000 -b:v 2000k -loglevel error %s -'
 AVCONV = 'avconv -i "%s" -preset ultrafast -f mp4 -frag_duration 3000 -b:v 2000k -loglevel error %s -'
@@ -116,7 +115,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """ Handle HTTP requests for files which do not need transcoding """
     
     def do_GET(self):
-        filepath = urllib.unquote_plus(self.path)
+        filepath = urllib.unquote_plus(self.path)[1:]
         
         self.send_headers(filepath)       
         
@@ -133,20 +132,20 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 
     def write_response(self, filepath):
-        with open(filepath, "rb") as f:           
+        with open(filepath, "rb") as f:
             while True:
                 line = f.read(1024)
                 if len(line) == 0:
                     break
-            
+
                 chunk_size = "%0.2X" % len(line)
                 self.wfile.write(chunk_size)
                 self.wfile.write("\r\n")
-                self.wfile.write(line) 
-                self.wfile.write("\r\n")  
-                
+                self.wfile.write(line)
+                self.wfile.write("\r\n")
+
         self.wfile.write("0")
-        self.wfile.write("\r\n\r\n")                             
+        self.wfile.write("\r\n\r\n")
 
 
 
@@ -169,7 +168,7 @@ class TranscodingRequestHandler(RequestHandler):
             self.wfile.write("\r\n")            
             
         self.wfile.write("0")
-        self.wfile.write("\r\n\r\n")                         
+        self.wfile.write("\r\n\r\n")
 
 
             
@@ -368,8 +367,7 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
     thread = Thread(target=server.handle_request)
     thread.start()    
 
-    
-    url = "http://%s:%s%s" % (webserver_ip, str(server.server_port), urllib.quote_plus(filename, "/"))
+    url = "http://%s:%s/%s" % (webserver_ip, str(server.server_port), urllib.quote_plus(filename, "/"))
     print "URL & content-type: ", url, req_handler.content_type
 
     load(cast, url, req_handler.content_type)
