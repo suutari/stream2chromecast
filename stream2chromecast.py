@@ -7,26 +7,21 @@ version 0.5
 =:-)
 
 """
-import sys, os
-import signal
-
-from cc_media_controller import CCMediaController
-import cc_device_finder
-import time
-
 import BaseHTTPServer
-import urllib
+import httplib
 import mimetypes
+import os
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib
+import urlparse
 from threading import Thread
 
-import subprocess
-
-import httplib
-import urlparse
-
-import select
-
-import tempfile
+import cc_device_finder
+from cc_media_controller import CCMediaController
 
 script_name = (sys.argv[0].split(os.sep))[-1]
 
@@ -99,37 +94,31 @@ Additional option to supply custom parameters to the transcoder (ffmpeg or avcon
     
 """ % ((script_name,) * 16)
 
-
-
-
 PIDFILE = os.path.join(tempfile.gettempdir(), "stream2chromecast_%s.pid")
 
 FFMPEG = 'ffmpeg -i "%s" -preset ultrafast -f mp4 -frag_duration 3000 -b:v 2000k -loglevel error %s -'
 AVCONV = 'avconv -i "%s" -preset ultrafast -f mp4 -frag_duration 3000 -b:v 2000k -loglevel error %s -'
 
 
-
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     content_type = "video/mp4"
-    
+
     """ Handle HTTP requests for files which do not need transcoding """
-    
+
     def do_GET(self):
         filepath = urllib.unquote_plus(self.path)[1:]
-        
-        self.send_headers(filepath)       
-        
-        print "sending file"        
-        self.write_response(filepath)
 
+        self.send_headers(filepath)
+
+        print "sending file"
+        self.write_response(filepath)
 
     def send_headers(self, filepath):
         self.protocol_version = "HTTP/1.1"
         self.send_response(200)
         self.send_header("Content-type", self.content_type)
         self.send_header("Transfer-Encoding", "chunked")
-        self.end_headers()    
-
+        self.end_headers()
 
     def write_response(self, filepath):
         with open(filepath, "rb") as f:
@@ -148,38 +137,35 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.write("\r\n\r\n")
 
 
-
 class TranscodingRequestHandler(RequestHandler):
     """ Handle HTTP requests for files which require realtime transcoding with ffmpeg """
     transcoder_command = FFMPEG
     transcode_options = ""
-                    
-    def write_response(self, filepath):
 
-        ffmpeg_command = self.transcoder_command % (filepath, self.transcode_options) 
-        
-        ffmpeg_process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, shell=True)       
+    def write_response(self, filepath):
+        ffmpeg_command = self.transcoder_command % (filepath, self.transcode_options)
+
+        ffmpeg_process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, shell=True)
 
         for line in ffmpeg_process.stdout:
             chunk_size = "%0.2X" % len(line)
             self.wfile.write(chunk_size)
             self.wfile.write("\r\n")
-            self.wfile.write(line) 
-            self.wfile.write("\r\n")            
-            
+            self.wfile.write(line)
+            self.wfile.write("\r\n")
+
         self.wfile.write("0")
         self.wfile.write("\r\n\r\n")
 
 
-            
 def get_transcoder_cmds(preferred_transcoder=None):
     """ establish which transcoder utility to use depending on what is installed """
     probe_cmd = None
     transcoder_cmd = None
-    
+
     ffmpeg_installed = is_transcoder_installed("ffmpeg")
-    avconv_installed = is_transcoder_installed("avconv")  
-    
+    avconv_installed = is_transcoder_installed("avconv")
+
     # if anything other than avconv is preferred, try to use ffmpeg otherwise use avconv    
     if preferred_transcoder != "avconv":
         if ffmpeg_installed:
@@ -189,7 +175,7 @@ def get_transcoder_cmds(preferred_transcoder=None):
             print "unable to find ffmpeg - using avconv"
             transcoder_cmd = "avconv"
             probe_cmd = "avprobe"
-    
+
     # otherwise, avconv is preferred, so try to use avconv, followed by ffmpeg  
     else:
         if avconv_installed:
@@ -199,11 +185,9 @@ def get_transcoder_cmds(preferred_transcoder=None):
             print "unable to find avconv - using ffmpeg"
             transcoder_cmd = "ffmpeg"
             probe_cmd = "ffprobe"
-            
+
     return transcoder_cmd, probe_cmd
-    
-    
-                
+
 
 def is_transcoder_installed(transcoder_application):
     """ check for an installation of either ffmpeg or avconv """
@@ -212,8 +196,6 @@ def is_transcoder_installed(transcoder_application):
         return True
     except OSError:
         return False
-       
-
 
 
 def kill_old_pid(device_ip):
@@ -222,57 +204,51 @@ def kill_old_pid(device_ip):
     try:
         with open(pid_file, "r") as pidfile:
             pid = int(pidfile.read())
-            os.killpg(pid, signal.SIGTERM)    
+            os.killpg(pid, signal.SIGTERM)
     except:
         pass
-               
 
 
 def save_pid(device_ip):
     """ saves the process id of this application casting to the specified device in a pid file. """
     pid_file = PIDFILE % device_ip
     with open(pid_file, "w") as pidfile:
-        pidfile.write("%d" %  os.getpid())
-
-
+        pidfile.write("%d" % os.getpid())
 
 
 def get_mimetype(filename, ffprobe_cmd=None):
     """ find the container format of the file """
     # default value
     mimetype = "video/mp4"
-    
-    
+
     # guess based on filename extension
     guess = mimetypes.guess_type(filename)[0]
     if guess is not None:
         if guess.lower().startswith("video/") or guess.lower().startswith("audio/"):
             mimetype = guess
-      
-        
+
     # use the OS file command...
     try:
         file_cmd = 'file --mime-type -b "%s"' % filename
         file_mimetype = subprocess.check_output(file_cmd, shell=True).strip().lower()
-        
+
         if file_mimetype.startswith("video/") or file_mimetype.startswith("audio/"):
             mimetype = file_mimetype
-            
+
             print "OS identifies the mimetype as :", mimetype
             return mimetype
     except:
         pass
-    
-    
+
     # use ffmpeg/avconv if installed
     if ffprobe_cmd is None:
         return mimetype
-    
+
     # ffmpeg/avconv is installed
     has_video = False
     has_audio = False
     format_name = None
-    
+
     ffprobe_cmd = '%s -show_streams -show_format "%s"' % (ffprobe_cmd, filename)
     ffmpeg_process = subprocess.Popen(ffprobe_cmd, stdout=subprocess.PIPE, shell=True)
 
@@ -280,39 +256,36 @@ def get_mimetype(filename, ffprobe_cmd=None):
         if line.startswith("codec_type=audio"):
             has_audio = True
         elif line.startswith("codec_type=video"):
-            has_video = True    
+            has_video = True
         elif line.startswith("format_name="):
             name, value = line.split("=")
             format_name = value.strip().lower().split(",")
 
-
     # use the default if it isn't possible to identify the format type
     if format_name is None:
         return mimetype
-    
-    
+
     if has_video:
         mimetype = "video/"
     else:
         mimetype = "audio/"
-        
+
     if "mp4" in format_name:
-        mimetype += "mp4"            
+        mimetype += "mp4"
     elif "webm" in format_name:
         mimetype += "webm"
     elif "ogg" in format_name:
-        mimetype += "ogg"        
+        mimetype += "ogg"
     elif "mp3" in format_name:
         mimetype = "audio/mpeg"
     elif "wav" in format_name:
-        mimetype = "audio/wav" 
-    else:   
-        mimetype += "mp4"     
-        
+        mimetype = "audio/wav"
+    else:
+        mimetype += "mp4"
+
     return mimetype
-    
-            
-            
+
+
 def play(filename, transcode=False, transcoder=None, transcode_options=None, device_name=None, server_port=None):
     """ play a local file on the chromecast """
 
@@ -320,28 +293,25 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
         filename = os.path.abspath(filename)
     else:
         sys.exit("media file %s not found" % filename)
-        
 
     cast = CCMediaController(device_name=device_name)
-    
+
     kill_old_pid(cast.host)
     save_pid(cast.host)
-        
+
     print "Playing:", filename
 
     transcoder_cmd, probe_cmd = get_transcoder_cmds(preferred_transcoder=transcoder)
-        
+
     mimetype = get_mimetype(filename, probe_cmd)
 
     status = cast.get_status()
     webserver_ip = status['client'][0]
-    
+
     print "my ip address:", webserver_ip
-        
-    
+
     req_handler = RequestHandler
 
-    
     if transcode:
         req_handler = TranscodingRequestHandler
         if transcoder_cmd == "ffmpeg":
@@ -351,101 +321,95 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
         else:
             sys.exit("Unable to find ffmpeg or avconv")
 
-        
-        if transcode_options is not None:    
+        if transcode_options is not None:
             req_handler.transcode_options = transcode_options
     else:
         req_handler.content_type = mimetype
-        
-    
+
     # create a webserver to handle a single request on a free port or a specific port if passed in the parameter   
-    port = 0    
-    
+    port = 0
+
     if server_port is not None:
         port = int(server_port)
-        
+
     server = BaseHTTPServer.HTTPServer((webserver_ip, port), req_handler)
-    
+
     thread = Thread(target=server.handle_request)
-    thread.start()    
+    thread.start()
 
     url = "http://%s:%s/%s" % (webserver_ip, str(server.server_port), urllib.quote_plus(filename, "/"))
     print "URL & content-type: ", url, req_handler.content_type
 
     load(cast, url, req_handler.content_type)
 
-    
-    
 
 def load(cast, url, mimetype):
     """ load a chromecast instance with a url and wait for idle state """
     try:
         print "loading media..."
-        
+
         cast.load(url, mimetype)
-        
+
         # wait for playback to complete before exiting
-        print "waiting for player to finish - press ctrl-c to stop..."    
-        
+        print "waiting for player to finish - press ctrl-c to stop..."
+
         idle = False
         while not idle:
             time.sleep(1)
             idle = cast.is_idle()
-   
+
     except KeyboardInterrupt:
         print
         print "stopping..."
         cast.stop()
-        
+
     finally:
         print "done"
-    
-    
+
+
 def playurl(url, device_name=None):
     """ play a remote HTTP resource on the chromecast """
 
     url_parsed = urlparse.urlparse(url)
-    
+
     scheme = url_parsed.scheme
     host = url_parsed.netloc
     path = url.split(host, 1)[-1]
-    
+
     conn = None
     if scheme == "https":
         conn = httplib.HTTPSConnection(host)
     else:
         conn = httplib.HTTPConnection(host)
-        
+
     conn.request("HEAD", path)
-    
+
     resp = conn.getresponse()
-    
+
     if resp.status != 200:
         sys.exit("HTTP error:" + resp.status + " - " + resp.reason)
-        
+
     print "Found HTTP resource"
-    
+
     headers = resp.getheaders()
-    
+
     mimetype = None
-    
+
     for header in headers:
         if len(header) > 1:
             if header[0].lower() == "content-type":
                 mimetype = header[1]
-    
-    if mimetype != None:            
+
+    if mimetype != None:
         print "content-type:", mimetype
     else:
         mimetype = "video/mp4"
         print "resource does not specify mimetype - using default:", mimetype
-    
-    cast = CCMediaController(device_name=device_name)
-    load(cast, url, mimetype)    
-    
 
-            
-    
+    cast = CCMediaController(device_name=device_name)
+    load(cast, url, mimetype)
+
+
 def pause(device_name=None):
     """ pause playback """
     CCMediaController(device_name=device_name).pause()
@@ -453,9 +417,9 @@ def pause(device_name=None):
 
 def unpause(device_name=None):
     """ continue playback """
-    CCMediaController(device_name=device_name).play()    
+    CCMediaController(device_name=device_name).play()
 
-        
+
 def stop(device_name=None):
     """ stop playback and quit the media player app on the chromecast """
     CCMediaController(device_name=device_name).stop()
@@ -464,6 +428,7 @@ def stop(device_name=None):
 def get_status(device_name=None):
     """ print the status of the chromecast device """
     print CCMediaController(device_name=device_name).get_status()
+
 
 def volume_up(device_name=None):
     """ raise the volume by 0.1 """
@@ -478,27 +443,25 @@ def volume_down(device_name=None):
 def set_volume(v, device_name=None):
     """ set the volume to level between 0 and 1 """
     CCMediaController(device_name=device_name).set_volume(v)
-    
-    
+
+
 def list_devices():
     print "Searching for devices, please wait..."
     device_ips = cc_device_finder.search_network(device_limit=None, time_limit=10)
-    
+
     print "%d devices found" % len(device_ips)
-    
+
     for device_ip in device_ips:
         print device_ip, ":", cc_device_finder.get_device_name(device_ip)
-        
-        
+
 
 def validate_args(args):
     """ validate that there are the correct number of arguments """
     if len(args) < 1:
         sys.exit(USAGETEXT)
-        
+
     if args[0] == "-setvol" and len(args) < 2:
-        sys.exit(USAGETEXT) 
-    
+        sys.exit(USAGETEXT)
 
 
 def get_named_arg_value(arg_name, args):
@@ -508,42 +471,40 @@ def get_named_arg_value(arg_name, args):
 
         arg_pos = args.index(arg_name)
         arg_name = args.pop(arg_pos)
-        
+
         if len(args) > (arg_pos + 1):
             arg_val = args.pop(arg_pos)
-            
+
     return arg_val
-    
-        
+
 
 def run():
     """ main execution """
     args = sys.argv[1:]
-    
-    
+
     # optional device name parm. if not specified, device_name = None (the first device found will be used).
     device_name = get_named_arg_value("-devicename", args)
-    
+
     # optional transcoder parm. if not specified, ffmpeg will be used, if installed, otherwise avconv.
-    transcoder = get_named_arg_value("-transcoder", args)    
-    
+    transcoder = get_named_arg_value("-transcoder", args)
+
     # optional server port parm. if not specified, a random available port will be used
-    server_port = get_named_arg_value("-port", args)     
-    
+    server_port = get_named_arg_value("-port", args)
+
     # optional transcode options parm. if specified, these options will be passed to the transcoder
-    transcode_options = get_named_arg_value("-transcodeopts", args)     
-    
+    transcode_options = get_named_arg_value("-transcodeopts", args)
+
     validate_args(args)
-    
+
     if args[0] == "-stop":
         stop(device_name=device_name)
-        
+
     elif args[0] == "-pause":
-        pause(device_name=device_name)        
-    
+        pause(device_name=device_name)
+
     elif args[0] == "-continue":
-        unpause(device_name=device_name)           
-    
+        unpause(device_name=device_name)
+
     elif args[0] == "-status":
         get_status(device_name=device_name)
 
@@ -559,20 +520,21 @@ def run():
     elif args[0] == "-mute":
         set_volume(0, device_name=device_name)
 
-    elif args[0] == "-transcode":    
-        arg2 = args[1]  
-        play(arg2, transcode=True, transcoder=transcoder, transcode_options=transcode_options, device_name=device_name, server_port=server_port)       
-        
-    elif args[0] == "-playurl":    
-        arg2 = args[1]  
-        playurl(arg2, device_name=device_name)                          
-        
+    elif args[0] == "-transcode":
+        arg2 = args[1]
+        play(arg2, transcode=True, transcoder=transcoder, transcode_options=transcode_options, device_name=device_name,
+             server_port=server_port)
+
+    elif args[0] == "-playurl":
+        arg2 = args[1]
+        playurl(arg2, device_name=device_name)
+
     elif args[0] == "-devicelist":
         list_devices()
-            
+
     else:
-        play(args[0], device_name=device_name, server_port=server_port)        
-        
-            
+        play(args[0], device_name=device_name, server_port=server_port)
+
+
 if __name__ == "__main__":
     run()
