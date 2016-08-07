@@ -154,15 +154,15 @@ class CCMediaController:
 
         self.receiver_app_status = None
 
-        if msg.has_key('status'):
+        if 'status' in msg:
             status = msg['status']
-            if status.has_key('applications'):
+            if 'applications' in status:
                 applications = status['applications']
                 for application in applications:
                     if application.get("appId") == MEDIAPLAYER_APPID:
                         self.receiver_app_status = application
 
-            if status.has_key('volume'):
+            if 'volume' in status:
                 self.volume_status = status['volume']
 
     def update_media_status_data(self, msg):
@@ -250,7 +250,7 @@ class CCMediaController:
 
                 self.get_media_status()
 
-                if self.media_status != None:
+                if self.media_status is not None:
                     player_state = self.media_status.get("playerState", "")
 
         self.close_socket()

@@ -113,7 +113,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         print "sending file"
         self.write_response(filepath)
 
-    def send_headers(self, filepath):
+    def send_headers(self):
         self.protocol_version = "HTTP/1.1"
         self.send_response(200)
         self.send_header("Content-type", self.content_type)

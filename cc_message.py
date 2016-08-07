@@ -25,7 +25,7 @@ def format_varint_value(int_value):
 
     varint_result = ""
 
-    while (int_value > 127):
+    while int_value > 127:
         varint_result += pack("B", int_value & 127 | 128)
         int_value >>= 7
 
@@ -127,7 +127,7 @@ def extract_string_field(data):
 
     while byte & 128:
         length += byte & 127
-        length = length << 7
+        length <<= 7
 
         ptr += 1
         byte = unpack("B", data[ptr])[0]
