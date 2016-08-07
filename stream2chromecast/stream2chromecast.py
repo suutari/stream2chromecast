@@ -20,8 +20,8 @@ import urllib
 import urlparse
 from threading import Thread
 
-import cc_device_finder
-from stream2chromecast.cc_media_controller import CCMediaController
+from . import cc_device_finder
+from .cc_media_controller import CCMediaController
 
 script_name = (sys.argv[0].split(os.sep))[-1]
 
