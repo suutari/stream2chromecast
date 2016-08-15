@@ -4,7 +4,7 @@ from setuptools import setup
 setup(
     name='stream2chromecast',
     packages=['stream2chromecast'],
-    version='0.5',
+    version='0.6',
     description='Chromecast media streamer',
     author='rfigueroa',
     author_email='rfigueroaoficial@gmail.com',
