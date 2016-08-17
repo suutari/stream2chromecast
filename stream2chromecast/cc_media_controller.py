@@ -179,8 +179,7 @@ class CCMediaController:
             if 'applications' in status:
                 applications = status['applications']
                 for application in applications:
-                    if application.get("appId") == MEDIAPLAYER_APPID:
-                        self.receiver_app_status = application
+                    self.receiver_app_status = application
 
             if 'volume' in status:
                 self.volume_status = status['volume']
