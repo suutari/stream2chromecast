@@ -41,6 +41,8 @@ import tempfile
 import time
 import urllib
 import urlparse
+import socket
+import errno
 from threading import Thread
 
 import cc_device_finder
