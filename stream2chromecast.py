@@ -32,6 +32,7 @@ VERSION = "0.6.1"
 
 import sys, os, errno
 import signal
+import argparse
 
 from cc_media_controller import CCMediaController
 import cc_device_finder
@@ -50,85 +51,6 @@ import urlparse
 import socket
 
 import tempfile
-
-
-
-script_name = (sys.argv[0].split(os.sep))[-1]
-
-USAGETEXT = """
-Usage
-
-Play a file:-
-    %s <file>
-    
-
-Pause the current file:-
-    %s -pause
-
-
-Continue (un-pause) the current file:-
-    %s -continue
-
-        
-Stop the current file playing:-
-    %s -stop
-
-
-Set the volume to a value between 0 & 1.0  (e.g. 0.5 = half volume):-
-    %s -setvol <volume>
-
-
-Adjust the volume up or down by 0.1:-
-    %s -volup
-    %s -voldown
-    
-
-Mute the volume:-
-    %s -mute
-    
-           
-Play an unsupported media type (e.g. an mpg file) using ffmpeg or avconv as a realtime transcoder (requires ffmpeg or avconv to be installed):-
-    %s -transcode <file> 
-
-
-Play remote file using a URL (e.g. a web video):
-    %s -playurl <URL>
-
-    
-Display Chromecast status:-
-    %s -status    
-    
-    
-Search for all Chromecast devices on the network:-
-    %s -devicelist
-    
-    
-Additional option to specify an Chromecast device by name (or ip address) explicitly:
-    e.g. to play a file on a specific device
-    %s -devicename <chromecast device name> <file>
-    
-    
-Additional option to specify the preferred transcoder tool when both ffmpeg & avconv are available
-    e.g. to play and transcode a file using avconv
-    %s -transcoder avconv -transcode <file>
-    
-    
-Additional option to specify the port from which the media is streamed. This can be useful in a firewalled environment.
-    e.g. to serve the media on port 8765
-    %s -port 8765 <file>
-    
-    
-Additional option to supply custom parameters to the transcoder (ffmpeg or avconv)
-    e.g. to transcode the media with an output video bitrate of 1000k
-    %s -transcode -transcodeopts '-b:v 1000k' <file>
-    
-Additional option to specify the buffer size of the data returned from the transcoder. Increasing this can help when on a slow network.
-    e.g. to specify a buffer size of 5 megabytes
-    %s -transcode -transcodebufsize 5242880 <file>
-    
-""" % ((script_name,) * 17)
-
-
 
 
 PIDFILE = os.path.join(tempfile.gettempdir(), "stream2chromecast_%s.pid") 
@@ -372,9 +294,9 @@ def get_mimetype(filename, ffprobe_cmd=None):
     
             
             
-def play(filename, transcode=False, transcoder=None, transcode_options=None, transcode_bufsize=0, device_name=None, server_port=None):
+def play(filename, transcode, transcoder, transcode_options, transcode_bufsize, device_name, server_port):
     """ play a local file on the chromecast """
-    
+
     print_ident()
 
     if os.path.isfile(filename):
@@ -466,7 +388,7 @@ def load(cast, url, mimetype):
         print "done"
     
     
-def playurl(url, device_name=None):
+def playurl(url, device_name):
     """ play a remote HTTP resource on the chromecast """
     
     print_ident()
@@ -508,43 +430,43 @@ def playurl(url, device_name=None):
         print "resource does not specify mimetype - using default:", mimetype
     
     cast = CCMediaController(device_name=device_name)
-    load(cast, url, mimetype)    
+    load(cast, url, mimetype)
     
 
             
     
-def pause(device_name=None):
+def pause(device_name):
     """ pause playback """
     CCMediaController(device_name=device_name).pause()
 
 
-def unpause(device_name=None):
+def unpause(device_name):
     """ continue playback """
-    CCMediaController(device_name=device_name).play()    
+    CCMediaController(device_name=device_name).play()
 
         
-def stop(device_name=None):
+def stop(device_name):
     """ stop playback and quit the media player app on the chromecast """
     CCMediaController(device_name=device_name).stop()
 
 
-def get_status(device_name=None):
+def get_status(device_name):
     """ print the status of the chromecast device """
     print CCMediaController(device_name=device_name).get_status()
 
-def volume_up(device_name=None):
+def volume_up(device_name):
     """ raise the volume by 0.1 """
     CCMediaController(device_name=device_name).set_volume_up()
 
 
-def volume_down(device_name=None):
+def volume_down(device_name):
     """ lower the volume by 0.1 """
     CCMediaController(device_name=device_name).set_volume_down()
 
 
-def set_volume(v, device_name=None):
+def set_volume(device_name, volume):
     """ set the volume to level between 0 and 1 """
-    CCMediaController(device_name=device_name).set_volume(v)
+    CCMediaController(device_name=device_name).set_volume(volume)
     
     
 def list_devices():
@@ -569,103 +491,95 @@ def print_ident():
     print "https://www.gnu.org/licenses/gpl-3.0.html"
     print    
     print "-----------------------------------------"
-    print 
-    
-
-def validate_args(args):
-    """ validate that there are the correct number of arguments """
-    if len(args) < 1:
-        sys.exit(USAGETEXT)
-        
-    if args[0] == "-setvol" and len(args) < 2:
-        sys.exit(USAGETEXT) 
-    
+    print
 
 
-def get_named_arg_value(arg_name, args, integer=False):
-    """ get a argument value by name """
-    arg_val = None
-    if arg_name in args:
+def parse_args():
+    device_parser = argparse.ArgumentParser(add_help=False)
+    device_group = device_parser.add_argument_group("device")
+    device_group.add_argument("-d", "--device_name",
+                              help="specify an Chromecast device by name (or ip address) explicitly: "
+                                   "e.g. to play a file on a specific device", default=None)
 
-        arg_pos = args.index(arg_name)
-        arg_name = args.pop(arg_pos)
-        
-        if len(args) > (arg_pos + 1):
-            arg_val = args.pop(arg_pos)
-    
-    if integer:
-        int_arg_val = 0
-        if arg_val is not None:
-            try:
-                int_arg_val = int(arg_val)
-            except ValueError:
-                print "Invalid integer parameter, defaulting to zero. Parameter name:", arg_name
-                
-        arg_val = int_arg_val
-                
-    return arg_val
-    
-        
+    server_parser = argparse.ArgumentParser(add_help=False)
+    server_group = server_parser.add_argument_group("server")
+    server_group.add_argument("-p", "--server_port",
+                              help="specify the port from which the media is streamed. "
+                                   "This can be useful in a firewalled environment", default=None)
+
+    transcoder_parser = argparse.ArgumentParser(add_help=False)
+    transcoder_group = transcoder_parser.add_argument_group("transcoder")
+    transcoder_group.add_argument("--transcode", action="store_true",
+                                  help="Play an unsupported media type (e.g. an mpg file) "
+                                        "using ffmpeg or avconv as a realtime transcoder "
+                                       "(requires ffmpeg or avconv to be installed)")
+    transcoder_group.add_argument("--transcoder", choices=["ffmpeg", "avconv"], default="ffmpeg")
+    transcoder_group.add_argument("--transcode_options",
+                                  help="option to supply custom parameters to the "
+                                       "transcoder (ffmpeg or avconv)", default=None)
+    transcoder_group.add_argument("--transcode_bufsize", type=int,
+                                  help="pecify the buffer size of the data returned from the transcoder. "
+                                       "Increasing this can help when on a slow network.", default=0)
+
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+
+    devices_list_parser = subparsers.add_parser("devices_list",
+                                                help="Search for all Chromecast devices on the network")
+    devices_list_parser.set_defaults(function=list_devices)
+
+    play_parser = subparsers.add_parser("play", parents=[device_parser, server_parser, transcoder_parser],
+                                        help= "Play a file")
+    play_parser.add_argument("filename", help="The file to play")
+    play_parser.set_defaults(function=play)
+
+    play_url = subparsers.add_parser("playurl", parents=[device_parser],
+                                     help="Play remote file using a URL (e.g. a web video)")
+    play_url.add_argument("url", help="The url to play")
+    play_url.set_defaults(function=playurl)
+
+    pause_parser = subparsers.add_parser("pause", parents=[device_parser],
+                                         help="Pause the current file playing")
+    pause_parser.set_defaults(function=pause)
+
+    continue_parser = subparsers.add_parser("continue", parents=[device_parser],
+                                            help="Continue (Unpause) the current file playing")
+    continue_parser.set_defaults(function=unpause)
+
+    stop_parser = subparsers.add_parser("stop", parents=[device_parser],
+                                        help="Stop the current file playing")
+    stop_parser.set_defaults(function=stop)
+
+    status_parser = subparsers.add_parser("status", parents=[device_parser],
+                                          help="Display Chromecast status")
+    status_parser.set_defaults(function=get_status)
+
+    setvol_parser = subparsers.add_parser("setvol", parents=[device_parser],
+                                          help="Set the volume")
+    setvol_parser.add_argument("volume", type=float, help="value between 0 & 1.0  (e.g. 0.5 = half volume)")
+    setvol_parser.set_defaults(function=set_volume)
+
+    volume_up_parser = subparsers.add_parser("volup", parents=[device_parser],
+                                             help="Increase volume by 0.1")
+    volume_up_parser.set_defaults(function=volume_up)
+
+    volume_down_parser = subparsers.add_parser("voldown", parents=[device_parser],
+                                               help="Decrease volume by 0.1")
+    volume_down_parser.set_defaults(function=volume_down)
+
+    mute_parser = subparsers.add_parser("mute", parents=[device_parser],
+                                        help="Mute the volume")
+    mute_parser.set_defaults(volume=0)
+    mute_parser.set_defaults(function=set_volume)
+
+    return parser.parse_args()
 
 def run():
-    """ main execution """
-    args = sys.argv[1:]
-    
-    
-    # optional device name parm. if not specified, device_name = None (the first device found will be used).
-    device_name = get_named_arg_value("-devicename", args)
-    
-    # optional transcoder parm. if not specified, ffmpeg will be used, if installed, otherwise avconv.
-    transcoder = get_named_arg_value("-transcoder", args)    
-    
-    # optional server port parm. if not specified, a random available port will be used
-    server_port = get_named_arg_value("-port", args)     
-    
-    # optional transcode options parm. if specified, these options will be passed to the transcoder
-    transcode_options = get_named_arg_value("-transcodeopts", args)     
-    
-    # optional transcode bufsize parm. if specified, the transcoder will buffer approximately this many bytes of output
-    transcode_bufsize = get_named_arg_value("-transcodebufsize", args, integer=True) 
-        
-    validate_args(args)
-    
-    if args[0] == "-stop":
-        stop(device_name=device_name)
-        
-    elif args[0] == "-pause":
-        pause(device_name=device_name)        
-    
-    elif args[0] == "-continue":
-        unpause(device_name=device_name)           
-    
-    elif args[0] == "-status":
-        get_status(device_name=device_name)
-
-    elif args[0] == "-setvol":
-        set_volume(float(args[1]), device_name=device_name)
-
-    elif args[0] == "-volup":
-        volume_up(device_name=device_name)
-
-    elif args[0] == "-voldown":
-        volume_down(device_name=device_name)
-
-    elif args[0] == "-mute":
-        set_volume(0, device_name=device_name)
-
-    elif args[0] == "-transcode":    
-        arg2 = args[1]  
-        play(arg2, transcode=True, transcoder=transcoder, transcode_options=transcode_options, transcode_bufsize=transcode_bufsize, device_name=device_name, server_port=server_port)       
-        
-    elif args[0] == "-playurl":    
-        arg2 = args[1]  
-        playurl(arg2, device_name=device_name)                          
-        
-    elif args[0] == "-devicelist":
-        list_devices()
-            
-    else:
-        play(args[0], device_name=device_name, server_port=server_port)        
+    args = parse_args()
+    args_dict = vars(args)
+    func = args_dict.pop("function")
+    func(**args_dict)
         
             
 if __name__ == "__main__":
