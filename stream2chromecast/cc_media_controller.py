@@ -1,7 +1,7 @@
 """
 Provides a control interface to the Chromecast Media Player app
 
-version 0.2
+version 0.2.1
 
 """
 
@@ -52,7 +52,10 @@ class CCMediaController:
         self.receiver_app_status = None
         self.media_status = None
         self.volume_status = None
-
+        self.current_applications = None
+        
+    
+    
     def get_device(self, device_name):
         """ get the device ip address """
 
@@ -104,9 +107,9 @@ class CCMediaController:
     def read_message(self):
         """ read a complete message from the device """
 
-        data = None
-        while data is None:
-            data = self.sock.recv(4)
+        data = ""
+        while len(data) < 4:
+            data += self.sock.recv(4)
 
         msg_length, data = cc_message.extract_length_header(data)
         while len(data) < msg_length:
@@ -177,8 +180,8 @@ class CCMediaController:
         if 'status' in msg:
             status = msg['status']
             if 'applications' in status:
-                applications = status['applications']
-                for application in applications:
+                self.current_applications = status['applications']
+                for application in self.current_applications:
                     if application.get("appId") == MEDIAPLAYER_APPID:
                         self.receiver_app_status = application
 
@@ -220,7 +223,7 @@ class CCMediaController:
         namespace = "urn:x-cast:com.google.cast.media"
         self.send_msg_with_response(namespace, data)
 
-    def load(self, content_url, content_type):
+    def load(self, content_url, content_type, sub, sub_language):
         """ Launch the player app, load & play a URL """
 
         self.connect("receiver-0")
@@ -259,8 +262,29 @@ class CCMediaController:
                 }
                 }
 
+        if sub:        
+            if sub_language is None:
+                sub_language = "en-US"
+                
+            data["media"].update({
+                                "textTrackStyle":{
+                                    'backgroundColor':'#FFFFFF00'
+                                },
+                                "tracks": [{"trackId": 1,
+                                            "trackContentId": sub,
+                                            "type": "TEXT",
+                                            "language": sub_language,
+                                            "subtype": "SUBTITLES",
+                                            "name": "Englishx",
+                                            "trackContentType": "text/vtt",
+                                           }],
+                                })
+            data["activeTrackIds"] = [1]
+
+        
         namespace = "urn:x-cast:com.google.cast.media"
         resp = self.send_msg_with_response(namespace, data)
+
 
         # wait for the player to return "BUFFERING", "PLAYING" or "IDLE"
         if resp.get("type", "") == "MEDIA_STATUS":
@@ -316,12 +340,21 @@ class CCMediaController:
             transport_id = str(self.receiver_app_status['transportId'])
             self.connect(transport_id)
             self.get_media_status()
-
-        status = {'receiver_status': self.receiver_app_status,
-                  'media_status': self.media_status,
-                  'host': self.host,
-                  'client': self.sock.getsockname()}
-
+        
+        application_list = []
+        if self.current_applications is not None:
+            for application in self.current_applications:
+                application_list.append({
+                    'appId':application.get('appId', ""), 
+                    'displayName':application.get('displayName', ""),  
+                    'statusText':application.get('statusText', "")})
+        
+        status = {'receiver_status':self.receiver_app_status, 
+                  'media_status':self.media_status, 
+                  'host':self.host, 
+                  'client':self.sock.getsockname(),
+                  'applications':application_list}
+                
         self.close_socket()
 
         return status
