@@ -4,7 +4,7 @@ stream2chromecast.py: Chromecast media streamer for Linux
 
 author: Pat Carter - https://github.com/Pat-Carter/stream2chromecast
 
-version: 0.6
+version: 0.6.2
 
 """
 
@@ -27,7 +27,7 @@ version: 0.6
 # along with Stream2chromecast.  If not, see <http://www.gnu.org/licenses/>.
 
 
-VERSION = "0.6"
+VERSION = "0.6.2"
 
 
 import BaseHTTPServer
@@ -111,13 +111,33 @@ Additional option to specify the preferred transcoder tool when both ffmpeg & av
 Additional option to specify the port from which the media is streamed. This can be useful in a firewalled environment.
     e.g. to serve the media on port 8765
     %s -port 8765 <file>
-    
+
+
+Additional option to specify subtitles. Only WebVTT format is supported.
+    e.g. to cast the subtitles on /path/to/subtitles.vtt
+    %s -subtitles /path/to/subtitles.vtt <file>
+
+
+Additional option to specify the port from which the subtitles is streamed. This can be useful in a firewalled environment.
+    e.g. to serve the subtitles on port 8765
+    %s -subtitles_port 8765 <file>
+
+
+Additional option to specify the subtitles language. The language format is defined by RFC 5646.
+    e.g. to serve the subtitles french subtitles
+    %s -subtitles_language fr <file>
+
     
 Additional option to supply custom parameters to the transcoder (ffmpeg or avconv)
     e.g. to transcode the media with an output video bitrate of 1000k
     %s -transcode -transcodeopts '-b:v 1000k' <file>
+
     
-""" % ((script_name,) * 16)
+Additional option to specify the buffer size of the data returned from the transcoder. Increasing this can help when on a slow network.
+    e.g. to specify a buffer size of 5 megabytes
+    %s -transcode -transcodebufsize 5242880 <file>
+    
+""" % ((script_name,) * 20)
 
 PIDFILE = os.path.join(tempfile.gettempdir(), "stream2chromecast_%s.pid")
 
@@ -169,6 +189,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.protocol_version = "HTTP/1.1"
         self.send_response(200)
         self.send_header("Content-type", self.content_type)
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
 
@@ -193,11 +214,15 @@ class TranscodingRequestHandler(RequestHandler):
     """ Handle HTTP requests for files which require realtime transcoding with ffmpeg """
     transcoder_command = FFMPEG
     transcode_options = ""
-
+    bufsize = 0
+                    
     def write_response(self, filepath):
-        ffmpeg_command = self.transcoder_command % (filepath, self.transcode_options)
-
-        ffmpeg_process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, shell=True)
+        if self.bufsize != 0:
+            print "transcode buffer size:", self.bufsize
+        
+        ffmpeg_command = self.transcoder_command % (filepath, self.transcode_options) 
+        
+        ffmpeg_process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, shell=True, bufsize=self.bufsize)       
 
         for line in ffmpeg_process.stdout:
             chunk_size = "%0.2X" % len(line)
@@ -208,6 +233,13 @@ class TranscodingRequestHandler(RequestHandler):
 
         self.wfile.write("0")
         self.wfile.write("\r\n\r\n")
+
+
+
+class SubRequestHandler(RequestHandler):
+    """ Handle HTTP requests for subtitles files """
+    content_type = "text/vtt;charset=utf-8"
+
 
 
 def get_transcoder_cmds(preferred_transcoder=None):
@@ -336,9 +368,12 @@ def get_mimetype(filename, ffprobe_cmd=None):
         mimetype += "mp4"
 
     return mimetype
-
-
-def play(filename, transcode=False, transcoder=None, transcode_options=None, device_name=None, server_port=None):
+    
+            
+            
+def play(filename, transcode=False, transcoder=None, transcode_options=None,
+         transcode_bufsize=0, device_name=None, server_port=None,
+         subtitles=None, subtitles_port=None, subtitles_language=None):
     """ play a local file on the chromecast """
 
     print_ident()
@@ -367,22 +402,28 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
     req_handler = RequestHandler
 
     if transcode:
-        req_handler = TranscodingRequestHandler
-        if transcoder_cmd == "ffmpeg":
-            req_handler.transcoder_command = FFMPEG
-        elif transcoder_cmd == "avconv":
-            req_handler.transcoder_command = AVCONV
+        if transcoder_cmd in ("ffmpeg", "avconv"):
+            req_handler = TranscodingRequestHandler
+            
+            if transcoder_cmd == "ffmpeg":  
+                req_handler.transcoder_command = FFMPEG
+            else:
+                req_handler.transcoder_command = AVCONV
+                
+            if transcode_options is not None:    
+                req_handler.transcode_options = transcode_options
+                
+            req_handler.bufsize = transcode_bufsize
         else:
-            sys.exit("Unable to find ffmpeg or avconv")
-
-        if transcode_options is not None:
-            req_handler.transcode_options = transcode_options
+            print "No transcoder is installed. Attempting standard playback"
+            req_handler.content_type = mimetype    
     else:
-        req_handler.content_type = mimetype
-
-    # create a webserver to handle a single request on a free port or a specific port if passed in the parameter   
-    port = 0
-
+        req_handler.content_type = mimetype    
+        
+    
+    # create a webserver to handle a single request for the media file on either a free port or on a specific port if passed in the port parameter   
+    port = 0    
+    
     if server_port is not None:
         port = int(server_port)
 
@@ -392,18 +433,40 @@ def play(filename, transcode=False, transcoder=None, transcode_options=None, dev
     thread.start()
 
     url = "http://%s:%s/%s" % (webserver_ip, str(server.server_port), urllib.quote_plus(filename, "/"))
+
     print "URL & content-type: ", url, req_handler.content_type
 
-    load(cast, url, req_handler.content_type)
+
+    # create another webserver to handle a request for the subtitles file, if specified in the subtitles parameter
+    sub = None
+
+    if subtitles:
+        if os.path.isfile(subtitles):
+            sub_port = 0
+
+            if subtitles_port is not None:
+                sub_port = int(subtitles_port)
+
+            sub_server = BaseHTTPServer.HTTPServer((webserver_ip, sub_port), SubRequestHandler)
+            thread2 = Thread(target=sub_server.handle_request)
+            thread2.start()
+
+            sub = "http://%s:%s%s" % (webserver_ip, str(sub_server.server_port), urllib.quote_plus(subtitles, "/"))
+            print "sub URL: ", sub
+        else:
+            print "Subtitles file %s not found" % subtitles
 
 
-def load(cast, url, mimetype):
+    load(cast, url, req_handler.content_type, sub, subtitles_language)
+
+
+def load(cast, url, mimetype, sub=None, sub_language=None):
     """ load a chromecast instance with a url and wait for idle state """
     try:
         print "loading media..."
-
-        cast.load(url, mimetype)
-
+        
+        cast.load(url, mimetype, sub, sub_language)
+        
         # wait for playback to complete before exiting
         print "waiting for player to finish - press ctrl-c to stop..."
 
@@ -536,7 +599,7 @@ def validate_args(args):
         sys.exit(USAGETEXT)
 
 
-def get_named_arg_value(arg_name, args):
+def get_named_arg_value(arg_name, args, integer=False):
     """ get a argument value by name """
     arg_val = None
     if arg_name in args:
@@ -546,7 +609,17 @@ def get_named_arg_value(arg_name, args):
 
         if len(args) > (arg_pos + 1):
             arg_val = args.pop(arg_pos)
-
+    
+    if integer:
+        int_arg_val = 0
+        if arg_val is not None:
+            try:
+                int_arg_val = int(arg_val)
+            except ValueError:
+                print "Invalid integer parameter, defaulting to zero. Parameter name:", arg_name
+                
+        arg_val = int_arg_val
+                
     return arg_val
 
 
@@ -564,8 +637,22 @@ def run():
     server_port = get_named_arg_value("-port", args)
 
     # optional transcode options parm. if specified, these options will be passed to the transcoder
-    transcode_options = get_named_arg_value("-transcodeopts", args)
+    transcode_options = get_named_arg_value("-transcodeopts", args)     
+    
+    # optional transcode bufsize parm. if specified, the transcoder will buffer approximately this many bytes of output
+    transcode_bufsize = get_named_arg_value("-transcodebufsize", args, integer=True)
 
+    # optional subtitle parm. if specified, the specified subtitles will be played.
+    subtitles = get_named_arg_value("-subtitles", args)
+
+    # optional subtitle_port parm. if not specified, a random available port will be used.
+    subtitles_port = get_named_arg_value("-subtitles_port", args)
+
+    # optional subtitle_language parm. if not specified en-US will be used.
+    subtitles_language = get_named_arg_value("-subtitles_language", args)
+
+
+        
     validate_args(args)
 
     if args[0] == "-stop":
@@ -592,21 +679,23 @@ def run():
     elif args[0] == "-mute":
         set_volume(0, device_name=device_name)
 
-    elif args[0] == "-transcode":
-        arg2 = args[1]
-        play(arg2, transcode=True, transcoder=transcoder, transcode_options=transcode_options, device_name=device_name,
-             server_port=server_port)
-
-    elif args[0] == "-playurl":
-        arg2 = args[1]
-        playurl(arg2, device_name=device_name)
-
+    elif args[0] == "-transcode":    
+        arg2 = args[1]  
+        play(arg2, transcode=True, transcoder=transcoder, transcode_options=transcode_options, transcode_bufsize=transcode_bufsize,
+             device_name=device_name, server_port=server_port, subtitles=subtitles, subtitles_port=subtitles_port,
+             subtitles_language=subtitles_language)
+        
+    elif args[0] == "-playurl":    
+        arg2 = args[1]  
+        playurl(arg2, device_name=device_name)                          
+        
     elif args[0] == "-devicelist":
         list_devices()
 
     else:
-        play(args[0], device_name=device_name, server_port=server_port)
-
-
+        play(args[0], device_name=device_name, server_port=server_port, subtitles=subtitles,
+             subtitles_port=subtitles_port, subtitles_language=subtitles_language)
+        
+            
 if __name__ == "__main__":
     run()
