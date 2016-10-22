@@ -24,7 +24,6 @@ version 0.2.1
 # along with Stream2chromecast.  If not, see <http://www.gnu.org/licenses/>.
 
 
-
 import json
 import re
 import socket
@@ -39,6 +38,7 @@ MEDIAPLAYER_APPID = "CC1AD845"
 
 
 class CCMediaController:
+
     def __init__(self, device_name=None):
         """ initialise """
 
@@ -53,18 +53,18 @@ class CCMediaController:
         self.media_status = None
         self.volume_status = None
         self.current_applications = None
-        
-    
-    
+
     def get_device(self, device_name):
         """ get the device ip address """
 
-        is_ip_addr = device_name is not None and re.match("[0-9]+.[0-9]+.[0-9]+.[0-9]+$", device_name) is not None
+        is_ip_addr = device_name is not None and re.match(
+            "[0-9]+.[0-9]+.[0-9]+.[0-9]+$", device_name) is not None
 
         if is_ip_addr:
             host = device_name
             try:
-                print "ip_addr:", host, "device name:", cc_device_finder.get_device_name(host)
+                print "ip_addr:", host, "device name:", (
+                    cc_device_finder.get_device_name(host))
             except socket.error:
                 sys.exit("No Chromecast found on ip:" + host)
         else:
@@ -100,7 +100,8 @@ class CCMediaController:
 
         # print "Sending: ", namespace, data
 
-        msg = cc_message.format_message(self.source_id, self.destination_id, namespace, data)
+        msg = cc_message.format_message(
+            self.source_id, self.destination_id, namespace, data)
 
         self.sock.write(msg)
 
@@ -145,8 +146,8 @@ class CCMediaController:
                 namespace = "urn:x-cast:com.google.cast.tp.heartbeat"
                 self.send_data(namespace, data)
 
-                # if 30 ping/pong messages are received without a response to the request_id, 
-                # assume no response is coming
+                # if 30 ping/pong messages are received without a response
+                # to the request_id, assume no response is coming
                 count += 1
                 if count == 30:
                     return resp
@@ -163,7 +164,8 @@ class CCMediaController:
         return resp
 
     def send_msg_with_response(self, namespace, data):
-        """ send a request to the device and wait for a response matching the request id """
+        """ send a request to the device and wait for a response
+        matching the request id """
 
         self.request_id += 1
         data['requestId'] = self.request_id
@@ -195,7 +197,8 @@ class CCMediaController:
 
         status = msg.get("status", [])
         if len(status) > 0:
-            self.media_status = status[0]  # status is an array - selecting the first result..?
+            self.media_status = status[
+                0]  # status is an array - selecting the first result..?
 
     def connect(self, destination_id):
         """ connect to to the receiver or the media transport """
@@ -230,7 +233,8 @@ class CCMediaController:
 
         self.get_receiver_status()
 
-        # we only set the receiver status for MEDIAPLAYER - so if it is set, the app is currenty running
+        # we only set the receiver status for MEDIAPLAYER - so if it is set,
+        # the app is currenty running
         if self.receiver_app_status is None:
             data = {"type": "LAUNCH", "appId": MEDIAPLAYER_APPID}
             namespace = "urn:x-cast:com.google.cast.receiver"
@@ -262,34 +266,32 @@ class CCMediaController:
                 }
                 }
 
-        if sub:        
+        if sub:
             if sub_language is None:
                 sub_language = "en-US"
-                
+
             data["media"].update({
-                                "textTrackStyle":{
-                                    'backgroundColor':'#FFFFFF00'
-                                },
-                                "tracks": [{"trackId": 1,
-                                            "trackContentId": sub,
-                                            "type": "TEXT",
-                                            "language": sub_language,
-                                            "subtype": "SUBTITLES",
-                                            "name": "Englishx",
-                                            "trackContentType": "text/vtt",
-                                           }],
-                                })
+                "textTrackStyle": {
+                    'backgroundColor': '#FFFFFF00'
+                },
+                "tracks": [{"trackId": 1,
+                            "trackContentId": sub,
+                            "type": "TEXT",
+                            "language": sub_language,
+                            "subtype": "SUBTITLES",
+                            "name": "Englishx",
+                            "trackContentType": "text/vtt"}],
+            })
             data["activeTrackIds"] = [1]
 
-        
         namespace = "urn:x-cast:com.google.cast.media"
         resp = self.send_msg_with_response(namespace, data)
-
 
         # wait for the player to return "BUFFERING", "PLAYING" or "IDLE"
         if resp.get("type", "") == "MEDIA_STATUS":
             player_state = ""
-            while player_state != "PLAYING" and player_state != "IDLE" and player_state != "BUFFERING":
+            while player_state != "PLAYING" and (
+                    player_state != "IDLE" and player_state != "BUFFERING"):
                 time.sleep(2)
 
                 self.get_media_status()
@@ -340,21 +342,21 @@ class CCMediaController:
             transport_id = str(self.receiver_app_status['transportId'])
             self.connect(transport_id)
             self.get_media_status()
-        
+
         application_list = []
         if self.current_applications is not None:
             for application in self.current_applications:
                 application_list.append({
-                    'appId':application.get('appId', ""), 
-                    'displayName':application.get('displayName', ""),  
-                    'statusText':application.get('statusText', "")})
-        
-        status = {'receiver_status':self.receiver_app_status, 
-                  'media_status':self.media_status, 
-                  'host':self.host, 
-                  'client':self.sock.getsockname(),
-                  'applications':application_list}
-                
+                    'appId': application.get('appId', ""),
+                    'displayName': application.get('displayName', ""),
+                    'statusText': application.get('statusText', "")})
+
+        status = {'receiver_status': self.receiver_app_status,
+                  'media_status': self.media_status,
+                  'host': self.host,
+                  'client': self.sock.getsockname(),
+                  'applications': application_list}
+
         self.close_socket()
 
         return status
@@ -368,7 +370,8 @@ class CCMediaController:
             if status['receiver_status'] is None:
                 return True
             else:
-                return status['receiver_status'].get("statusText", "") == u"Ready To Cast"
+                return status['receiver_status'].get("statusText", "") == (
+                    u"Ready To Cast")
 
         else:
             return status['media_status'].get("playerState", "") == u"IDLE"
@@ -386,7 +389,8 @@ class CCMediaController:
         self.control("STOP")
 
     def set_volume(self, level):
-        """ set the receiver volume - a float value in level for absolute level or "+" / "-" indicates up or down"""
+        """ set the receiver volume - a float value in level for absolute level
+        or "+" / "-" indicates up or down"""
 
         self.connect("receiver-0")
 
@@ -400,7 +404,8 @@ class CCMediaController:
                 elif level == "-":
                     level = curr_level - 0.1
 
-        data = {"type": "SET_VOLUME", "volume": {"muted": False, "level": level}}
+        data = {"type": "SET_VOLUME", "volume":
+                {"muted": False, "level": level}}
         namespace = "urn:x-cast:com.google.cast.receiver"
         self.send_msg_with_response(namespace, data)
 

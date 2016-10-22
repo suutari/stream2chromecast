@@ -3,7 +3,8 @@ Locates Chromecast devices on the local network.
 
 version 0.3.1
 
-Parts of this are adapted from code found in PyChromecast - https://github.com/balloob/pychromecast
+Parts of this are adapted from code found in PyChromecast -
+https://github.com/balloob/pychromecast
 
 """
 
@@ -24,8 +25,6 @@ Parts of this are adapted from code found in PyChromecast - https://github.com/b
 #
 # You should have received a copy of the GNU General Public License
 # along with Stream2chromecast.  If not, see <http://www.gnu.org/licenses/>.
-
-
 
 
 import datetime
@@ -59,7 +58,8 @@ def search_network(device_limit=None, time_limit=5):
     sock.sendto(req, ("239.255.255.250", 1900))
 
     while True:
-        time_remaining = time_limit - (datetime.datetime.now() - start_time).seconds
+        time_remaining = time_limit - \
+            (datetime.datetime.now() - start_time).seconds
         if time_remaining <= 0:
             break
 
@@ -79,7 +79,8 @@ def search_network(device_limit=None, time_limit=5):
                 elif line.upper().startswith("ST:"):
                     st = line[3:].strip()
 
-            if addr is not None and st == "urn:dial-multiscreen-org:service:dial:1":
+            if addr is not None and (
+                    st == "urn:dial-multiscreen-org:service:dial:1"):
                 addrs.append(addr)
 
                 if device_limit and len(addrs) == device_limit:
@@ -103,17 +104,20 @@ def get_device_name(ip_addr):
             try:
                 xml = ElementTree.fromstring(status_doc)
 
-                device_element = xml.find("{urn:schemas-upnp-org:device-1-0}" + "device")
+                device_element = xml.find(
+                    "{urn:schemas-upnp-org:device-1-0}" + "device")
 
-                return device_element.find("{urn:schemas-upnp-org:device-1-0}" + "friendlyName").text
+                return device_element.find(
+                    "{urn:schemas-upnp-org:device-1-0}" + "friendlyName").text
 
             except ElementTree.ParseError:
                 return ""
         else:
             return ""
     except:
-        # unable to get a name - this might be for many reasons 
-        # e.g. a non chromecast device on the network that responded to the search
+        # unable to get a name - this might be for many reasons
+        # e.g. a non chromecast device on the network that responded to the
+        # search
         return ""
 
 
@@ -131,7 +135,8 @@ def check_cache(name):
                     if len(line_split) > 1:
                         hostname, host = line_split
                         if name == hostname:
-                            # name is found - check that the host responds with the same name
+                            # name is found - check that the host responds with
+                            # the same name
                             device_name = get_device_name(host)
                             print "Device name response:", device_name
                             if name == device_name and device_name != "":
